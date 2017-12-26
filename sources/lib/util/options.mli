@@ -85,6 +85,7 @@ val set_restricted : bool -> unit
 val set_bottom_classes : bool -> unit
 val set_timelimit : float -> unit
 val set_thread_yield : (unit -> unit) -> unit
+val set_minimal_bj : bool -> unit
 
 val set_timeout : (unit -> unit) -> unit
 val set_partial_bmodel : bool -> unit
@@ -172,6 +173,9 @@ val instantiate_after_backjump : unit -> bool
 val disable_weaks : unit -> bool
 val default_input_lang : unit -> string
 val answers_with_locs  : unit -> bool
+val lazy_sat : unit -> bool
+val disable_flat_formulas_simplification : unit -> bool
+val enable_restarts : unit -> bool
 
 (** this option also yields true if profiling is set to true **)
 val timers : unit -> bool
@@ -185,11 +189,14 @@ val get_session_file : unit -> string
 val get_used_context_file : unit -> string
 val sat_plugin : unit -> string
 val parsers : unit -> string list
+val use_satml : unit -> bool
 val inequalities_plugin : unit -> string
 val profiling_plugin : unit -> string
 val normalize_instances : unit -> bool
 val partial_bmodel : unit -> bool
 val use_fpa : unit -> bool
+val minimal_bj : unit -> bool
+val smt2_output : unit -> bool
 
 (** particular getters : functions that are immediately executed **************)
 val exec_thread_yield : unit -> unit
