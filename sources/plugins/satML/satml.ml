@@ -1131,6 +1131,7 @@ module SFF = Flat_Formula.Set
 
 module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
 
+  module Matoms = Map.Make (struct type t = atom let compare = cmp_atom end)
 
   type th = Th.t
   type env =
@@ -1237,14 +1238,20 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
         mutable tenv_queue : Th.t Vec.t;
 
         mutable tatoms_queue : atom Queue.t;
+        mutable th_tableaux : atom Queue.t;
 
         mutable cpt_current_propagations : int;
 
         mutable proxies : (Types.atom * Types.atom list * bool) Util.MI.t;
 
-        mutable lazy_cnf : Flat_Formula.t list;
+        mutable lazy_cnf :
+          (Flat_Formula.t list MFF.t * Flat_Formula.t) Matoms.t;
 
-        lazy_cnf_queue : Flat_Formula.t list Vec.t;
+        lazy_cnf_queue :
+          (Flat_Formula.t list MFF.t * Flat_Formula.t) Matoms.t Vec.t;
+
+        mutable relevants : SFF.t;
+        relevants_queue : SFF.t Vec.t;
 
         mutable ff_lvl : int MFF.t;
 
@@ -1354,13 +1361,20 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
 
       tatoms_queue = Queue.create ();
 
+      th_tableaux = Queue.create ();
+
       cpt_current_propagations = 0;
 
       proxies = Util.MI.empty;
 
-      lazy_cnf = [];
+      lazy_cnf = Matoms.empty;
 
-      lazy_cnf_queue = Vec.make 10 [];
+      lazy_cnf_queue =
+        Vec.make 100
+          (Matoms.singleton (faux_atom) (MFF.empty, Flat_Formula.faux));
+
+      relevants = SFF.empty;
+      relevants_queue = Vec.make 100 (SFF.singleton (Flat_Formula.faux));
 
       ff_lvl = MFF.empty;
 
@@ -1446,7 +1460,10 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
     Vec.push env.trail_lim (Vec.size env.trail);
     if Options.profiling() then Profiling.decision (decision_level()) "<none>";
     Vec.push env.tenv_queue env.tenv; (* save the current tenv *)
-    if Options.lazy_sat () then Vec.push env.lazy_cnf_queue env.lazy_cnf
+    if Options.lazy_sat () then begin
+      Vec.push env.lazy_cnf_queue env.lazy_cnf;
+      Vec.push env.relevants_queue env.relevants
+    end
 
   let attach_clause c =
     Vec.push (Vec.get c.atoms 0).neg.watched c;
@@ -1520,13 +1537,21 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
         end
       done;
       Queue.clear env.tatoms_queue;
+      Queue.clear env.th_tableaux;
       env.tenv <- Vec.get env.tenv_queue lvl; (* recover the right tenv *)
-      if Options.lazy_sat () then env.lazy_cnf <- Vec.get env.lazy_cnf_queue lvl;
+      if Options.lazy_sat () then begin
+        env.lazy_cnf <- Vec.get env.lazy_cnf_queue lvl;
+        env.relevants <- Vec.get env.relevants_queue lvl;
+      end;
       Vec.shrink env.trail ((Vec.size env.trail) - env.qhead) true;
       Vec.shrink env.trail_lim ((Vec.size env.trail_lim) - lvl) true;
       Vec.shrink env.tenv_queue ((Vec.size env.tenv_queue) - lvl) true;
-      if Options.lazy_sat () then
+      if Options.lazy_sat () then begin
         Vec.shrink env.lazy_cnf_queue ((Vec.size env.lazy_cnf_queue) - lvl) true;
+        Vec.shrink env.relevants_queue
+          ((Vec.size env.relevants_queue) - lvl) true
+          [@ocaml.ppwarning "TODO: try to disable 'fill_with_dummy'"]
+      end;
       (try
          let last_dec =
            if Vec.size env.trail_lim = 0 then 0 else Vec.last env.trail_lim in
@@ -1703,33 +1728,77 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
       | Some a -> a
       | None -> assert false
 
-  let compute_facts_for_theory_propagate () =
-    let open Flat_Formula in
-    let rec aux ls accu tat =
-      match ls with
-        [] -> tat, accu
-      | f :: ls ->
-        assert ((get_atom_or_proxy f env.proxies).Types.is_true);
-        match view f with
+
+
+
+let add_form_to_lazy_cnf =
+  let open Flat_Formula in
+  let add_disj ma f_a l =
+    List.fold_left
+      (fun ma fchild ->
+        let child = get_atom_or_proxy fchild env.proxies in
+        let ctt = try Matoms.find child ma |> fst with Not_found -> MFF.empty in
+        Matoms.add child (MFF.add f_a l ctt, fchild) ma
+      )ma l
+  in
+  let rec add_aux ma (f_a : t) =
+    if SFF.mem f_a env.relevants then ma
+    else
+      begin
+        env.relevants <- SFF.add f_a env.relevants;
+        match view f_a with
         | UNIT a ->
-          aux ls accu (SA.add a tat)
+          Queue.push a env.th_tableaux;
+          ma
+
         | AND l ->
-          aux (List.rev_append l ls) accu tat
-        | OR l ->
-          let res =
-            List.find_opt (fun e ->
-                let proxy_e = get_atom_or_proxy e env.proxies in
-                proxy_e.Types.is_true
-              ) l in
-          match res with
-          | None -> aux ls (f :: accu) tat
-          | Some e -> aux (e::ls) accu tat
+          List.fold_left add_aux ma l
+
+        | OR l  ->
+          match List.find_opt (fun e ->
+            let p = get_atom_or_proxy e env.proxies in
+            p.is_true) l
+          with
+          | None   -> add_disj ma f_a l
+          | Some e -> add_aux ma e
+      end
+  in
+  fun ma f_a -> add_aux ma f_a
+
+
+let relevancy_propagation ma a =
+  try
+    let parents, f_a = Matoms.find a ma in
+    let ma = Matoms.remove a ma in
+    let ma =
+      MFF.fold
+        (fun fp lp ma ->
+          List.fold_left
+            (fun ma bf ->
+              let b = get_atom_or_proxy bf env.proxies in
+              if eq_atom a b then ma
+              else
+                let mf_b, fb =
+                  try Matoms.find b ma with Not_found -> assert false in
+                assert (Flat_Formula.equal bf fb);
+                let mf_b = MFF.remove fp mf_b in
+                if MFF.is_empty mf_b then Matoms.remove b ma
+                else Matoms.add b (mf_b, fb) ma
+            )ma lp
+        )parents ma
     in
-    let tat, accu = aux env.lazy_cnf [] SA.empty in
-    let tatoms_queue = Queue.create () in
-    SA.iter (fun a -> Queue.push a tatoms_queue) tat;
-    env.lazy_cnf <- accu;
-    tatoms_queue
+    assert (let a = get_atom_or_proxy f_a env.proxies in a.is_true);
+    add_form_to_lazy_cnf ma f_a
+  with Not_found -> ma
+
+
+let compute_facts_for_theory_propagate () =
+  (*let a = SFF.cardinal env.relevants in*)
+  env.lazy_cnf <-
+    Queue.fold relevancy_propagation env.lazy_cnf env.tatoms_queue;
+  if Options.enable_assertions() then (*debug *)
+    Matoms.iter (fun a _ -> assert (not a.is_true)) env.lazy_cnf
+
 
   let expensive_theory_propagate () = None
 (* try *)
@@ -1780,7 +1849,10 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
     let facts = ref [] in
     let dlvl = decision_level () in
     let tatoms_queue =
-      if Options.lazy_sat () then compute_facts_for_theory_propagate ()
+      if Options.lazy_sat () then begin
+        compute_facts_for_theory_propagate ();
+        env.th_tableaux
+      end
       else env.tatoms_queue
     in
     match unit_theory_propagate env.tatoms_queue tatoms_queue with
@@ -1806,6 +1878,8 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
         facts := (ta.lit, ex, dlvl,env.cpt_current_propagations) :: !facts;
       env.cpt_current_propagations <- env.cpt_current_propagations + 1
     done;
+    Queue.clear env.tatoms_queue;
+    Queue.clear env.th_tableaux;
     if !facts == [] then C_none
     else
       try
@@ -2312,7 +2386,7 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
       propagate_and_stabilize all_propagations conflictC;
 
       if nb_assigns () = env.nb_init_vars ||
-        (Options.lazy_sat () && env.lazy_cnf == []) then
+        (Options.lazy_sat () && Matoms.is_empty env.lazy_cnf) then
         raise Sat;
       if Options.enable_restarts ()
         && n_of_conflicts >= 0 && !conflictC >= n_of_conflicts then begin
@@ -2480,7 +2554,7 @@ are detected ..."]
             assert (not (MFF.mem ff env.ff_lvl));
             assert (not (SFF.mem ff s));
             env.ff_lvl <- MFF.add ff dec_lvl env.ff_lvl;
-            ff :: l, SFF.add ff s
+            add_form_to_lazy_cnf l ff, SFF.add ff s
           | Some a ->
             (* TODO for case 'Some a' *)
             assert false
@@ -2528,8 +2602,12 @@ are detected ..."]
     let rec better_bj mf =
       let old_dlvl = decision_level () in
       let old_lazy = env.lazy_cnf in
+      let old_relevants = env.relevants in
       let old_tenv = env.tenv in
-      let fictive_lazy = MFF.fold (fun ff _ acc -> ff::acc) mf old_lazy in
+      let fictive_lazy =
+        MFF.fold (fun ff _ acc -> add_form_to_lazy_cnf acc ff)
+          mf old_lazy
+      in
       env.lazy_cnf <- fictive_lazy;
       propagate_and_stabilize all_propagations (ref 0);
       let new_dlvl = decision_level () in
@@ -2538,6 +2616,7 @@ are detected ..."]
         begin
           assert (old_dlvl == new_dlvl);
           env.lazy_cnf <- old_lazy;
+          env.relevants <- old_relevants;
           env.tenv     <- old_tenv
         end
     in
@@ -2629,8 +2708,13 @@ are detected ..."]
     env.trail_lim <- Vec.make 601 (-105);
     env.tenv_queue <- Vec.make 100 (Th.empty ());
     env.tatoms_queue <- Queue.create ();
-    env.lazy_cnf <- [];
+    env.th_tableaux <- Queue.create ();
+    env.lazy_cnf <- Matoms.empty;
     Vec.clear env.lazy_cnf_queue;
+
+    env.relevants <- SFF.empty;
+    Vec.clear env.relevants_queue;
+
     env.ff_lvl <- MFF.empty;
     env.lvl_ff <- Util.MI.empty
 
@@ -2679,6 +2763,7 @@ are detected ..."]
     env.trail_lim <- s_env.trail_lim;
     env.tenv_queue <- s_env.tenv_queue;
     env.tatoms_queue <- s_env.tatoms_queue;
+    env.th_tableaux <- s_env.th_tableaux;
     env.learntsize_factor <- s_env.learntsize_factor;
     Solver_types.cpt_mk_var := st_cpt_mk_var;
     Solver_types.ma := st_ma
