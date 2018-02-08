@@ -6,14 +6,15 @@ LOCAL_INC = -I lib/util -I lib/structures -I lib/reasoners \
     -I lib/frontend -I tools/text -I tools/gui \
     -I parsers/why \
     -I plugins/common -I plugins/satML \
-    -I plugins/fm-simplex
+    -I plugins/fm-simplex \
+    -I plugins/w34ae
 
 INCLUDES = $(NUMLIB) $(ZARITHLIB) $(LABLGTK2LIB)  $(CAMLZIPLIB) $(OCPLIBSIMPLEXLIB) $(LOCAL_INC)
 #for coverage # -I /usr/local/lib/ocaml/3.12.1/bisect -pp "camlp4o str.cma /usr/local/lib/ocaml/3.12.1/bisect/bisect_pp.cmo"
 
 # TODO : enable these warnings one by one and fix the code
 
-WARNINGS= -w +A-45-27-4-9-44-32-48-41-6
+WARNINGS= -w +A-45-22-27-4-9-44-32-48-41-6
 
 # xxxx: Warning 22: user warnings
 # x6 : Warning 60: unused module MyNums. ==> pb with recursive modules
@@ -51,7 +52,7 @@ LIBNAME = altErgo
 BYTE=$(NAME).byte
 OPT=$(NAME).opt
 
-all: alt-ergo gui satML fm-simplex
+all: alt-ergo gui satML fm-simplex w34ae
 
 ifeq ($(OCAMLBEST),opt)
 alt-ergo: opt
@@ -59,11 +60,18 @@ else
 alt-ergo: byte
 endif
 
+GENERATED_WHY3 = plugins/w34ae/why3_lexer.ml \
+	    plugins/w34ae/why3_parser.ml \
+	    plugins/w34ae/why3_parser.mli \
+	    plugins/w34ae/why3_lexlib.ml \
+	    plugins/w34ae/why3_parser.automaton
+
 GENERATED = lib/util/config.ml \
             lib/util/cmdline_parser.ml \
             parsers/why/why_parser.ml \
             parsers/why/why_parser.mli \
-            parsers/why/why_lexer.ml
+            parsers/why/why_lexer.ml \
+	    $(GENERATED_WHY3)
 
 # bytecode and native-code compilation
 ######################################
@@ -304,7 +312,7 @@ uninstall:
 #######
 
 clean:
-	@for dd in lib/util lib/structures lib/reasoners lib/frontend tools/text tools/gui parsers/why plugins/common plugins/satML plugins/common plugins/common plugins/fm-simplex ; do \
+	@for dd in lib/util lib/structures lib/reasoners lib/frontend tools/text tools/gui parsers/why plugins/common plugins/satML plugins/common plugins/common plugins/fm-simplex plugins/w34ae ; do \
 	rm -f $$dd/*.cm[ioxtp] $$dd/*.cmti $$dd/*.o $$dd/*~ $$dd/*.annot $$dd/*.owz;\
 	rm -f $(GENERATED) $$dd/*.output META ; \
 	rm -f $(NAME).byte $(NAME).opt $(GUINAME).opt $(GUINAME).byte *~; \
@@ -317,7 +325,7 @@ clean:
 
 .depend depend: $(GENERATED)
 	$(OCAMLDEP) -slash $(LOCAL_INC) lib/util/*.ml* lib/structures/*.ml* lib/reasoners/*.ml* lib/frontend/*.ml* tools/text/*.ml* \
-        tools/gui/*.ml* parsers/why/*.ml* plugins/common/*ml* plugins/satML/*ml* plugins/fm-simplex/*ml* > .depend
+        tools/gui/*.ml* parsers/why/*.ml* plugins/common/*ml* plugins/satML/*ml* plugins/fm-simplex/*ml* plugins/w34ae/*ml* > .depend
 
 include .depend
 
@@ -379,6 +387,43 @@ else
 	cp -f fm-simplex-plugin.cma $(PLUGINSDIR)
 endif
 
+W34AE-CMO = plugins/w34ae/why3_loc.cmo \
+	  plugins/w34ae/why3_opt.cmo \
+	  plugins/w34ae/why3_hashcons.cmo \
+	  plugins/w34ae/why3_exn_printer.cmo \
+	  plugins/w34ae/why3_bigInt.cmo \
+	  plugins/w34ae/why3_number.cmo \
+	  plugins/w34ae/why3_ident.cmo \
+	  plugins/w34ae/why3_lexlib.cmo \
+	  plugins/w34ae/why_printer.cmo \
+	  plugins/w34ae/why3_debug.cmo \
+	  plugins/w34ae/astConversion.cmo \
+	  plugins/w34ae/why3_parser.cmo \
+	  plugins/w34ae/why3_lexer.cmo \
+	  plugins/w34ae/why3_printer.cmo
+
+W34AE-CMX = $(W34AE-CMO:.cmo=.cmx)
+
+w34ae-plugin.cmxs: $(CMX) $(W34AE-CMX)
+	$(if $(QUIET),@echo 'Library $@' &&) $(OCAMLOPT) $(INCLUDES)  -shared -o $@ $(W34AE-CMX)
+
+w34ae-plugin.cma: $(CMO) $(W34AE-CMO)
+	$(if $(QUIET),@echo 'Library $@' &&) $(OCAMLC) $(INCLUDES)  -a        -o $@ $(W34AE-CMO)
+
+ifeq ($(OCAMLBEST),opt)
+w34ae: w34ae-plugin.cmxs
+else
+w34ae: w34ae-plugin.cma
+endif
+
+install-w34ae: w34ae
+ifeq ($(OCAMLBEST),opt)
+	mkdir -p $(PLUGINSDIR)
+	cp -f w34ae-plugin.cmxs $(PLUGINSDIR)
+else
+	mkdir -p $(PLUGINSDIR)
+	cp -f w34ae-plugin.cma $(PLUGINSDIR)
+endif
 
 show-dest-dirs:
 	@echo BINDIR      = $(BINDIR)
