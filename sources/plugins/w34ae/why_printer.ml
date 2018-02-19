@@ -124,7 +124,14 @@ let str_of_Parsed_decl (pd : Parsed.decl)  =
   | Goal (l, s, le) -> "Goal : (_, " ^ s ^ ", " ^ str_of_lexpr le ^ ")"
   | Logic (_, _, _, _) -> Format.eprintf "TODO@."; assert false
   | Predicate_def (_, _, _, _) -> Format.eprintf "TODO@."; assert false
-  | Function_def (_, _, _, _, _) -> Format.eprintf "TODO@."; assert false
+  | Function_def (_, (s0, s1), l, ppty, le) ->
+     let rec str_of_param l =
+       match l with
+       | [] -> ""
+       | (_, s, ppty)::t ->
+          "(" ^ s ^ " : " ^ str_of_ppure_type ppty ^ ") " ^ str_of_param t in       
+     "Function : " ^ s0 ^ s1 ^ str_of_param l ^ " : " ^
+       str_of_ppure_type ppty ^ "..."
   | TypeDecl (_, _, _, _) -> Format.eprintf "TODO@."; assert false
 
 let rec str_of_why_ast (ast : Parsed.decl list)  =

@@ -136,10 +136,9 @@ let print_binder b debug =
                     
 (* param  *)
 let str_of_param (_, op_i, _, pty) =
-    let str_i =
     match op_i with
     | None -> "None"
-    | Some i -> str_of_ident i in
+    | Some i ->  let str_i = str_of_ident i in
     "param : (_, " ^ str_i ^ ", _," ^ str_of_pty pty ^ ")"
 
 let print_param p debug =
