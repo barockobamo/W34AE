@@ -242,31 +242,11 @@ let translate_type_decl
   let ty_vars = List.map (fun i -> i.id_str) td_params in
   match td_def with
   | TDabstract -> mk_abstract_type_decl loc ty_vars td_ident.id_str
-  | TDalias pty -> Format.eprintf "TODO@."; assert false
   | TDalgebraic l  ->
      let ls = List.map (fun (_, i, _) -> i.id_str) l in
      mk_enum_type_decl loc ty_vars td_ident.id_str ls
-  | TDrecord fl  -> Format.eprintf "TODO@."; assert false
-  | TDrange (bi0, bi1) -> Format.eprintf "TODO@."; assert false
-  | TDfloat (i1, i2) -> Format.eprintf "TODO@."; assert false
-(*
-let rec translate_pty2 = function
-  | PTtyapp (q, l) ->
-     begin
-       match q with
-       | Qident i ->
-          let loc = translate_loc i.id_loc in
-          let ppure_t =  
-            match i.id_str with
-            | "int" -> int_type
-            | "bool" -> bool_type
-	    | _ -> Format.eprintf "TODO@."; assert false in
-          [(loc, i.id_str,  ppure_t)] 
-       | _ -> Format.eprintf "TODO@."; assert false
-     end
-  | PTparen p  -> translate_pty2 p
-  | _  ->  Format.eprintf "TODO@."; assert false
- *)
+  | _  -> Format.eprintf "TODO@."; assert false
+
 
 let translate_logic_decl
       {ld_loc; ld_ident; ld_params; ld_type; ld_def} : Parsed.decl =
@@ -319,16 +299,11 @@ let rec translate_theory_decls (dcls : decls) acc : Parsed.decl list =
        match d with
        | Dtype t -> List.map translate_type_decl t
        | Dlogic l -> List.map translate_logic_decl l
-       | Dind (_, _) ->  Format.eprintf "TODO@."; assert false
        | Dprop (Why3_decl.Pgoal,  {id_str; id_lab; id_loc}, term) ->
           [mk_goal loc id_str (translate_term term)]
-       | Dprop (Why3_decl.Plemma,  {id_str; id_lab; id_loc}, term) ->
-          Format.eprintf "TODO@."; assert false
        | Dprop (Why3_decl.Paxiom,  {id_str; id_lab; id_loc}, term) ->
           [mk_generic_axiom loc id_str (translate_term term)]
-       | Dprop (Why3_decl.Pskip,  {id_str; id_lab; id_loc}, term) ->
-          Format.eprintf "TODO@."; assert false
-       | Dmeta (i, ml) -> Format.eprintf "TODO@."; assert false
+       | _ -> Format.eprintf "TODO@."; assert false
        end in
      translate_theory_decls t (acc @ trad_d)
 	 
