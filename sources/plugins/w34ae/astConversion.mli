@@ -43,8 +43,8 @@ val translate_param :
   Why3_loc.position * Why3_ptree.ident option * 'a * Why3_ptree.pty ->
   Loc.t * string * Parsed.ppure_type
 val translate_type_decl : Why3_ptree.type_decl -> Parsed.decl
-val translate_pty2 :
-  Why3_ptree.pty -> (Loc.t * string * Parsed.ppure_type) list
+(*val translate_pty2 :
+  Why3_ptree.pty -> (Loc.t * string * Parsed.ppure_type) list*)
 val translate_logic_decl : Why3_ptree.logic_decl -> Parsed.decl
 val translate_theory_decls : decls -> Parsed.decl list -> Parsed.decl list
 val translate_theory : 'a * decls -> Parsed.decl list

@@ -249,27 +249,24 @@ let translate_type_decl
   | TDrecord fl  -> Format.eprintf "TODO@."; assert false
   | TDrange (bi0, bi1) -> Format.eprintf "TODO@."; assert false
   | TDfloat (i1, i2) -> Format.eprintf "TODO@."; assert false
-
-let translate_pty2 = function
-  | PTtyvar (i, _) -> Format.eprintf "TODO@."; assert false
-  | PTtyapp (q, pl) ->
+(*
+let rec translate_pty2 = function
+  | PTtyapp (q, l) ->
      begin
        match q with
        | Qident i ->
           let loc = translate_loc i.id_loc in
-          let ppure_t =
+          let ppure_t =  
             match i.id_str with
             | "int" -> int_type
             | "bool" -> bool_type
 	    | _ -> Format.eprintf "TODO@."; assert false in
-          [(loc, i.id_str,  ppure_t)] (* !!! TODO/CHECK : recursive
-                                 * function + accumulator ??? *)
+          [(loc, i.id_str,  ppure_t)] 
        | _ -> Format.eprintf "TODO@."; assert false
      end
-  | PTtuple pl ->  Format.eprintf "TODO@."; assert false
-  | PTarrow (p0, p1) ->  Format.eprintf "TODO@."; assert false
-  | PTparen p  ->Format.eprintf "TODO@."; assert false
-
+  | PTparen p  -> translate_pty2 p
+  | _  ->  Format.eprintf "TODO@."; assert false
+ *)
 
 let translate_logic_decl
       {ld_loc; ld_ident; ld_params; ld_type; ld_def} : Parsed.decl =
@@ -306,7 +303,7 @@ let translate_logic_decl
              mk_non_ground_predicate_def loc named_ident args expr
         end
      | Some pty ->
-        let spp_list = translate_pty2 pty in
+        let spp_list = List.map translate_param ld_params in
         let ppure_t = translate_pty pty in
         mk_function_def loc named_ident spp_list ppure_t expr
 
