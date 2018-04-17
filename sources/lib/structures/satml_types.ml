@@ -31,7 +31,9 @@ module type ATOM = sig
        mutable level : int;
        mutable index : int;
        mutable reason: reason;
-       mutable vpremise : premise}
+       mutable vpremise : premise;
+       mutable should_be_true : bool   
+    }
 
   and atom =
     { var : var;
@@ -166,7 +168,9 @@ module Atom : ATOM = struct
        mutable level : int;
        mutable index : int;
        mutable reason: reason;
-       mutable vpremise : premise}
+       mutable vpremise : premise;
+       mutable should_be_true : bool   
+    }
 
   and atom =
     { var : var;
@@ -204,7 +208,9 @@ module Atom : ATOM = struct
       weight = -1.;
       sweight = 0;
       seen = false;
-      vpremise = [] }
+      vpremise = [];
+      should_be_true = false
+    }
   and dummy_atom =
     { var = dummy_var;
       timp = false;
@@ -320,6 +326,7 @@ module Atom : ATOM = struct
             sweight = max_depth lit;
 	    seen = false;
 	    vpremise = [];
+            should_be_true = false
 	  }
         and pa =
 	  { var = var;

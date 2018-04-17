@@ -22,7 +22,9 @@ module type ATOM = sig
        mutable level : int;
        mutable index : int;
        mutable reason: reason;
-       mutable vpremise : premise}
+       mutable vpremise : premise;
+       mutable should_be_true : bool                                  
+    }
 
   and atom =
     { var : var;

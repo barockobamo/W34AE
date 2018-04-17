@@ -351,7 +351,13 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
 *)
 
   let f_weight env i j =
-    Pervasives.(<) (Vec.get env.vars j).weight (Vec.get env.vars i).weight
+    let vi = Vec.get env.vars i in
+    let vj = Vec.get env.vars j in
+    if vi.should_be_true == vj.should_be_true then
+      Pervasives.(<) vj.weight vi.weight
+    else
+      Pervasives.(<) vj.should_be_true vi.should_be_true
+      
 
   let f_filter env i = (Vec.get env.vars i).level < 0
 
@@ -515,7 +521,7 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
 
   let pick_branch_lit env =
     let v = pick_branch_var env in
-    v.na
+    if v.should_be_true then v.pa else v.na
 
   let debug_enqueue_level a lvl reason =
     match reason with
@@ -535,6 +541,8 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
     !max_lvl
 
   let enqueue env a lvl reason =
+    if a.var.should_be_true && a == a.var.na then assert false;
+    (*cas UnSat  *)
     assert (not a.is_true && not a.neg.is_true &&
               a.var.level < 0 && a.var.reason == None && lvl >= 0);
   (* Garder la reason car elle est utile pour les unsat-core *)
