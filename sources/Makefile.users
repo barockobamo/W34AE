@@ -6,7 +6,7 @@ LOCAL_INC = -I lib/util -I lib/structures -I lib/reasoners \
     -I lib/frontend -I tools/text -I tools/gui \
     -I parsers/why \
     -I parsers/smt2 \
-    -I plugins/fm-simplex
+    -I plugins/fm-simplex \
     -I plugins/w34ae
 
 INCLUDES = $(NUMLIB) $(ZARITHLIB) $(LABLGTK2LIB)  $(CAMLZIPLIB) $(OCPLIBSIMPLEXLIB) $(PSMT2FELIB) $(LOCAL_INC)
