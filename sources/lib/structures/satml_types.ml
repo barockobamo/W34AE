@@ -255,9 +255,9 @@ module Atom : ATOM = struct
       List.iter (fun {name=name} -> fprintf fmt "%s," name) v
 
     let atom fmt a =
-      fprintf fmt "%s%d%s [index=%d | lit:%a] vpremise={{%a}}"
+      fprintf fmt "%s%d%s [index=%d | lit:%a] sbt=%b"
         (sign a) (a.var.vid+1) (value a) a.var.index Literal.LT.print a.lit
-        premise a.var.vpremise
+         a.var.should_be_true
 
 
     let atoms_list fmt l = List.iter (fprintf fmt "%a ; " atom) l
@@ -460,6 +460,9 @@ module type FLAT_FORMULA = sig
   val empty_hcons_env : unit -> hcons_env
   val nb_made_vars : hcons_env -> int
   val get_atom : hcons_env -> Literal.LT.t -> Atom.atom
+
+  val add_atom :
+    hcons_env -> Literal.LT.t -> Atom.var list -> Atom.atom * Atom.var list
 
   val simplify :
     hcons_env ->
@@ -1033,6 +1036,8 @@ module Flat_Formula : FLAT_FORMULA = struct
     abstr_f, !new_proxies, !proxies_mp, !new_vars
 
   let get_atom hcons a = Atom.get_atom hcons.atoms a
+
+  let add_atom hcons a acc = Atom.add_atom hcons.atoms a acc
 
   module Set = Set.Make(struct type t'=t type t=t' let compare=compare end)
   module Map = Map.Make(struct type t'=t type t=t' let compare=compare end)

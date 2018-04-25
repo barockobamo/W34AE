@@ -923,3 +923,4 @@ let get_is_gui () =
     Format.eprintf "Error in Options.get_is_gui: is_gui is not set!@.";
     assert false
 
+let () = parse_cmdline_arguments ()

@@ -70,6 +70,8 @@ module type SAT_ML = sig
   val exists_in_lazy_cnf : t -> FF.t -> bool
 
   val known_lazy_formulas : t -> int FF.Map.t
+  val add_foo : t -> Atom.atom -> unit
+
 (*end*)
 end
 
@@ -123,6 +125,8 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
 
       (* Un tas ordone en fonction de l'activite des variables *)
         mutable order : Iheap.t;
+
+        mutable order_sbt : var list;
 
       (* estimation de progressions, mis a jour par 'search()' *)
         mutable progress_estimate : float;
@@ -248,6 +252,8 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
 
       order = Iheap.init 0; (* sera mis a jour dans solve *)
 
+      order_sbt = [];
+
       progress_estimate = 0.;
 
       remove_satisfied = true;
@@ -338,8 +344,7 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
   let sa = List.fold_left (fun s e -> SA.add e s) SA.empty atoms in
   if SSA.mem sa !ssa then true
   else begin
-  ssa := SSA.add sa !ssa;
-  false
+  ssa := SSA.add sa !ssa;3
   end
   with Exit -> true
 
@@ -362,8 +367,10 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
   let f_filter env i = (Vec.get env.vars i).level < 0
 
   let insert_var_order env v =
-    Iheap.insert (f_weight env) env.order v.vid
-
+    try
+      Iheap.insert (f_weight env) env.order v.vid
+    with Not_found -> ()
+                       
   let var_decay_activity env = env.var_inc <- env.var_inc *. env.var_decay
 
   let clause_decay_activity env =
@@ -476,7 +483,8 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
           repush := a :: !repush
         end
         else begin
-          unassign_atom a;
+            fprintf fmt "atom %a@." Atom.pr_atom a;
+            unassign_atom a;
           insert_var_order env a.var
         end
       done;
@@ -519,9 +527,20 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
     end
     else v
 
+  exception Sbt_free of  var
+              
+  let pick_sbt_var order_sbt =  
+    try
+      List.iter (fun v -> if v.level < 0 then raise (Sbt_free v)) order_sbt; None
+    with Sbt_free v -> Some v.pa
+                            
   let pick_branch_lit env =
-    let v = pick_branch_var env in
-    if v.should_be_true then v.pa else v.na
+    match (pick_sbt_var env.order_sbt) with
+    | Some pa -> pa
+    | None ->
+       let v = pick_branch_var env in
+       v.na
+  (*if v.should_be_true then v.pa else v.na*)
 
   let debug_enqueue_level a lvl reason =
     match reason with
@@ -540,8 +559,37 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
         max_lvl := max !max_lvl a.var.level);
     !max_lvl
 
+  let all_should_be_true env =
+    try
+      for i = 0 to Vec.size env.trail - 1 do
+        let a = Vec.get env.trail i in
+        let v = a.var in
+        if v.level > 0 && v.reason == None then
+          if not v.should_be_true then raise Exit
+      done;
+      true
+    with Exit -> false
+    
   let enqueue env a lvl reason =
-    if a.var.should_be_true && a == a.var.na then assert false;
+    if a.var.should_be_true && a == a.var.na then begin
+        fprintf fmt
+          "@.@.should enqueue %a at level %d, but should_be_true@."
+          Atom.pr_atom a lvl;
+        begin
+          match reason with
+          | None -> fprintf fmt "No reason@."
+          | Some r -> fprintf fmt "reason is %a@." Atom.pr_clause r
+        end;
+        if all_should_be_true env then begin
+            fprintf fmt "Example is unsat@.";
+            exit 0
+          end
+        else begin
+            fprintf fmt "restart before decide@.";
+            cancel_until env 0;
+            raise Restart
+          end
+      end;
     (*cas UnSat  *)
     assert (not a.is_true && not a.neg.is_true &&
               a.var.level < 0 && a.var.reason == None && lvl >= 0);
@@ -550,7 +598,7 @@ module Make (Th : Theory.S) : SAT_ML with type th = Th.t = struct
     a.is_true <- true;
     a.var.level <- lvl;
     a.var.reason <- reason;
-  (*eprintf "enqueue: %a@." Debug.atom a; *)
+    eprintf "enqueue: %a@." Atom.pr_atom a;
     Vec.push env.trail a;
     a.var.index <- Vec.size env.trail;
     if Options.enable_assertions() then  debug_enqueue_level a lvl reason
@@ -759,6 +807,7 @@ let compute_facts_for_theory_propagate env =
     let facts =
       Queue.fold
         (fun acc ta ->
+          fprintf fmt "literal %a@." Literal.LT.print ta.lit;
           assert (ta.is_true);
           assert (ta.var.level >= 0);
           if ta.var.level = 0 then
@@ -1352,7 +1401,7 @@ let compute_facts_for_theory_propagate env =
         let current_level = decision_level env in
         env.cpt_current_propagations <- 0;
         assert (next.var.level < 0);
-        (* eprintf "decide: %a@." Atom.pr_atom next; *)
+        eprintf "decide: %a@." Atom.pr_atom next;
         enqueue env next current_level None
       | Some(c,sz) ->
         record_learnt_clause env ~is_T_learn:true (decision_level env) c [] sz
@@ -1524,6 +1573,8 @@ are detected ..."]
         List.fold_left
           (fun ((unit_cnf, nunit_cnf) as accu) v ->
             Vec.set env.vars v.vid v;
+            fprintf fmt "insert var order to decide on: %a@."
+              Atom.pr_atom v.pa;
             insert_var_order env v;
             match th_entailed tenv0 v.pa with
             | None -> accu
@@ -1569,6 +1620,7 @@ are detected ..."]
 
 
   let assume env unit_cnf nunit_cnf f ~cnumber mff ~dec_lvl =
+    fprintf fmt "ici assume@.";
     begin
       match unit_cnf, nunit_cnf with
       | [], [] -> ()
@@ -1624,6 +1676,12 @@ are detected ..."]
     in
     copy sv
 *)
+
+  let add_foo env a =
+    let v = a.var in
+    v.should_be_true <- true;
+    fprintf fmt "add_foo : %a@." Atom.pr_atom a;
+    env.order_sbt <- v :: env.order_sbt
 
   let known_lazy_formulas env = env.ff_lvl
 (*end*)

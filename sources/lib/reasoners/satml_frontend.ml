@@ -39,6 +39,7 @@ module Make (Th : Theory.S) : Sat_solver_sig.S = struct
     axs_of_abstr : (F.t * Atom.atom) MA.t;
     proxies : (Atom.atom * Atom.atom list * bool) Util.MI.t;
     inst : Inst.t;
+    foo : F.t MF.t;
     ground_preds : F.gformula A.Map.t; (* key <-> f *)
     skolems : F.gformula A.Map.t; (* key <-> f *)
     add_inst: Formula.t -> bool;
@@ -54,6 +55,7 @@ module Make (Th : Theory.S) : Sat_solver_sig.S = struct
       axs_of_abstr = MA.empty;
       proxies = Util.MI.empty;
       inst = Inst.empty;
+      foo = MF.empty;
       ground_preds = A.Map.empty;
       skolems = A.Map.empty;
       add_inst = fun _ -> true;
@@ -482,17 +484,23 @@ module Make (Th : Theory.S) : Sat_solver_sig.S = struct
       end
     else begin
       (* FF.simplify invariant: should not happen *)
-      assert (Atom.level at < 0);
-      let ded = match F.mk_not f |> F.view with
-        | F.Skolem q -> F.skolemize q
-        | _ -> assert false
-      in
-      (*XXX TODO: internal skolems*)
-      let f = F.mk_or (F.mk_lit lat 0) ded false 0 in
-      let nlat = A.neg lat in
-      (* semantics: nlat ==> f *)
-      {env with skolems = A.Map.add nlat (mk_gf f) env.skolems},
-      new_abstr_vars
+        assert (Atom.level at < 0);
+        try
+          let ded = match F.mk_not f |> F.view with
+            | F.Skolem q ->
+               if not (Ty.Set.is_empty (F.type_variables f))
+               then raise Exit;
+               F.skolemize q
+            | _ -> assert false
+          in
+          (*XXX TODO: internal skolems*)
+          let f = F.mk_or (F.mk_lit lat 0) ded false 0 in
+          let nlat = A.neg lat in
+          (* semantics: nlat ==> f *)
+          {env with skolems = A.Map.add nlat (mk_gf f) env.skolems},
+          new_abstr_vars
+        with Exit ->
+          env, new_abstr_vars
     end
 
   let expand_skolems env acc sa =
@@ -709,7 +717,20 @@ module Make (Th : Theory.S) : Sat_solver_sig.S = struct
     updated : bool;
   }
 
+  let mk_foo ({F.f} as gf) env =
+    try {gf with F.f = MF.find f env.foo}, env
+    with Not_found ->
+          let p = A.mk_pred (Term.fresh_name Ty.Tbool) false in
+          let fresh = F.mk_lit p 0 in
+          let res = F.mk_imp fresh f 0 in
+          let a, _acc = FF.add_atom env.ff_hcons_env p [] in
+          fprintf fmt "atom of %a is %a@." A.print p Atom.pr_atom a;
+          SAT.add_foo env.satml a;
+          let env = {env with foo = MF.add f res env.foo} in
+          {gf with F.f = res}, env
+    
   let pre_assume (env, acc) gf =
+    let gf, env = mk_foo gf env in
     let {F.f=f} = gf in
     if debug_sat() then
       fprintf fmt "Entry of pre_assume: Given %a@.@." F.print f;

@@ -119,6 +119,9 @@ module type FLAT_FORMULA = sig
   val nb_made_vars : hcons_env -> int
   val get_atom : hcons_env -> Literal.LT.t -> Atom.atom
 
+  val add_atom :
+    hcons_env -> Literal.LT.t -> Atom.var list -> Atom.atom * Atom.var list
+
   val simplify :
     hcons_env ->
     Formula.t ->
